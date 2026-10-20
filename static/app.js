@@ -1,4 +1,4 @@
-// Zero-knowledge client for "something".
+// Zero-knowledge client for "wick".
 //
 // All cryptography happens here, using only the browser's Web Crypto API. The server
 // never sees plaintext and never sees the decryption key: the key lives in location.hash,
