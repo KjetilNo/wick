@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}something{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">something</a>
+    <span class="tagline">zero-knowledge, one-time secrets</span>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <p>The server only ever stores ciphertext. The decryption key never leaves your browser.</p>
+  </footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

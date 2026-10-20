@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}something -- share a one-time secret{% endblock %}
+
+{% block content %}
+<section class="card" id="create-card">
+  <h1>Share a secret, once.</h1>
+  <p class="subtitle">
+    Encrypted in your browser before it ever leaves. The server stores ciphertext only --
+    it cannot read what you paste. The link works exactly once, then it's gone.
+  </p>
+
+  <form id="create-form">
+    <label for="secret">Secret</label>
+    <textarea id="secret" name="secret" rows="8" maxlength="{{ max_bytes }}"
+      placeholder="Paste a password, API key, or note..." required></textarea>
+
+    <div class="row">
+      <div class="field">
+        <label for="ttl">Expires after</label>
+        <select id="ttl" name="ttl">
+          {% for (label, secs) in ttl_choices %}
+          <option value="{{ secs }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field checkbox-field">
+        <label>
+          <input type="checkbox" id="use-passphrase">
+          Require a passphrase to view
+        </label>
+      </div>
+    </div>
+
+    <div class="field" id="passphrase-field" hidden>
+      <label for="passphrase">Passphrase</label>
+      <input type="password" id="passphrase" autocomplete="new-password"
+        placeholder="Shared out-of-band with the recipient">
+    </div>
+
+    <button type="submit">Encrypt &amp; create link</button>
+  </form>
+
+  <div id="create-result" hidden>
+    <label for="result-link">Share this link</label>
+    <div class="link-row">
+      <input id="result-link" type="text" readonly>
+      <button type="button" id="copy-link">Copy</button>
+    </div>
+    <p class="hint">
+      This link will not be shown again. The part after <code>#</code> is the decryption key
+      and never touched the server.
+    </p>
+  </div>
+
+  <p id="create-error" class="error" hidden></p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/app.js" defer></script>
+{% endblock %}

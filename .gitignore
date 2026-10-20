@@ -1,0 +1,24 @@
+# Rust build artifacts
+/target
+
+# Runtime state -- the sqlite db and its journal/WAL files are never committed
+/data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local env overrides
+.env
+.env.*
+
+# Nix build outputs
+/result
+/result-*
+
+# OS / editor noise
+.DS_Store
+*.swp
+
+# Local Claude Code state
+/.claude

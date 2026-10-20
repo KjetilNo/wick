@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wick
+  labels:
+    app: wick
+spec:
+  replicas: 1 # sqlite on a single PVC -- do not scale this past 1 without moving storage.
+  strategy:
+    type: Recreate # avoid two pods writing the same sqlite file during a rollout
+  selector:
+    matchLabels:
+      app: wick
+  template:
+    metadata:
+      labels:
+        app: wick
+    spec:
+      containers:
+        - name: wick
+          image: wick:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DATABASE_URL
+              value: "sqlite:/data/secrets.db"
+            - name: MAX_SECRET_BYTES
+              value: "262144"
+            - name: RUST_LOG
+              value: "wick=info,tower_http=info"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wick-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wick-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}something -- view secret{% endblock %}
+
+{% block content %}
+<section class="card" id="reveal-card"
+  data-id="{{ id }}"
+  data-available="{{ available }}"
+  data-requires-passphrase="{{ requires_passphrase }}">
+
+  {% if available %}
+  <h1>Someone shared a secret with you</h1>
+  <p class="subtitle">
+    This link works once. Viewing it now will permanently delete it from the server.
+  </p>
+
+  {% if requires_passphrase %}
+  <div class="field">
+    <label for="passphrase">Passphrase</label>
+    <input type="password" id="passphrase" autocomplete="off" placeholder="Enter the passphrase">
+  </div>
+  {% endif %}
+
+  <button type="button" id="reveal-button">Reveal &amp; burn</button>
+
+  <pre id="revealed-secret" hidden></pre>
+  <p id="reveal-error" class="error" hidden></p>
+  {% else %}
+  <h1>This secret is gone</h1>
+  <p class="subtitle">
+    It has already been viewed, it expired, or it never existed. One-time secrets can only
+    be opened once -- that's the whole point.
+  </p>
+  <a class="button-link" href="/">Share a new secret</a>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/app.js" defer></script>
+{% endblock %}
