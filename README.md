@@ -26,7 +26,11 @@ background reaper.
 
 ## Running locally
 
-Requires [Nix](https://nixos.org) (no global Rust toolchain needed — `flake.nix` provides one):
+### Option A: Nix (recommended — fully reproducible)
+
+Requires [Nix](https://nixos.org) (no global Rust toolchain needed — `flake.nix` provides
+one, with the sqlite/openssl/pkg-config build dependencies already wired up, on Linux and
+macOS alike):
 
 ```bash
 nix develop
@@ -34,7 +38,57 @@ cargo run
 # open http://localhost:8080
 ```
 
-Config is via environment variables (all optional):
+### Option B: a system Rust toolchain
+
+No Nix? Install [Rust via rustup](https://rustup.rs) plus a C compiler for your OS (needed
+to build the bundled sqlite), then `cargo run` works the same way everywhere.
+
+`cargo run` itself only needs a C compiler. `cargo test` additionally needs `pkg-config` +
+OpenSSL headers on Linux, because the test suite's HTTP client (`reqwest`) links against
+them there (on macOS it uses the system Security framework instead, so nothing extra is
+needed). `sqlite3` below is just the CLI, handy for poking at `data/secrets.db` by hand —
+see [Security notes](#security-notes) — not required to build or run.
+
+**Debian / Ubuntu:**
+```bash
+sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev sqlite3
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+**Fedora / RHEL / CentOS / Rocky:**
+```bash
+sudo dnf install -y gcc pkgconf-pkg-config openssl-devel sqlite
+# older releases (RHEL/CentOS 7-ish): use yum, and the pkg-config package is named
+# "pkgconfig" instead of "pkgconf-pkg-config" -- everything else is the same.
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+**macOS:**
+```bash
+xcode-select --install   # provides clang; nothing else is required, even for cargo test
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+# optional, only for the sqlite3 CLI (macOS ships an old one; Homebrew's is newer):
+brew install sqlite
+```
+
+Then, on any OS above:
+
+```bash
+cargo run
+# open http://localhost:8080
+```
+
+### Option C: Docker or Kubernetes
+
+No local toolchain install at all — see [Running with Docker](#running-with-docker) and
+[Deploying to Kubernetes](#deploying-to-kubernetes) below.
+
+### Config
+
+Via environment variables (all optional):
 
 | Var                      | Default                   | Meaning                                       |
 |--------------------------|----------------------------|-----------------------------------------------|
