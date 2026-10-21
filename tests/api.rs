@@ -89,6 +89,7 @@ async fn create_then_consume_then_second_consume_404s() {
     // First consume succeeds.
     let consume_res = client
         .post(format!("{base}/api/secrets/{id}/consume"))
+        .header("X-Requested-With", "wick")
         .send()
         .await
         .unwrap();
@@ -99,6 +100,7 @@ async fn create_then_consume_then_second_consume_404s() {
     // Second consume: gone.
     let second = client
         .post(format!("{base}/api/secrets/{id}/consume"))
+        .header("X-Requested-With", "wick")
         .send()
         .await
         .unwrap();
@@ -133,6 +135,7 @@ async fn expired_secret_is_unreachable() {
 
     let consume_res = client
         .post(format!("{base}/api/secrets/{id}/consume"))
+        .header("X-Requested-With", "wick")
         .send()
         .await
         .unwrap();

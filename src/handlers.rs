@@ -1,6 +1,7 @@
 use askama::Template;
 use askama_web::WebTemplate;
 use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use axum::Json;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -147,7 +148,18 @@ pub async fn reveal_page(
 pub async fn consume_secret(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> AppResult<Json<ConsumeResponse>> {
+    // Plain HTML forms/img tags can never set custom headers, so this blocks a third party
+    // from burning a secret via a cross-site auto-submitting form that only knows the id.
+    let requested_by_client = headers
+        .get("x-requested-with")
+        .and_then(|v| v.to_str().ok())
+        == Some("wick");
+    if !requested_by_client {
+        return Err(AppError::BadRequest("missing x-requested-with header".into()));
+    }
+
     let consumed = db::consume_secret(&state.db, &id, db::now_secs())
         .await?
         .ok_or(AppError::NotFound)?;

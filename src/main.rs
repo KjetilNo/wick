@@ -8,7 +8,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::from_env();
-    tracing::info!(port = config.port, database_url = %config.database_url, "starting wick");
+    tracing::info!(
+        port = config.port,
+        database_url = %redact_credentials(&config.database_url),
+        "starting wick"
+    );
 
     let db = wick::db::init_pool(&config.database_url).await?;
     let port = config.port;
@@ -27,4 +31,17 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Masks the `user:pass@` userinfo portion of a connection string before it's logged, so a
+/// future credentialed DATABASE_URL (e.g. postgres) can't end up in plaintext logs.
+fn redact_credentials(url: &str) -> String {
+    let Some(scheme_end) = url.find("://") else {
+        return url.to_string();
+    };
+    let rest = &url[scheme_end + 3..];
+    let Some(at) = rest.rfind('@') else {
+        return url.to_string();
+    };
+    format!("{}://***@{}", &url[..scheme_end], &rest[at + 1..])
 }

@@ -17,6 +17,10 @@ pub async fn security_headers(req: Request<Body>, next: Next) -> Response {
     headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
     headers.insert(
+        "strict-transport-security",
+        HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+    );
+    headers.insert(
         "content-security-policy",
         HeaderValue::from_static(
             "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; \

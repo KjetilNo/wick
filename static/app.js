@@ -207,7 +207,10 @@ function initRevealPage() {
     revealBtn.textContent = "Revealing...";
 
     try {
-      const res = await fetch(`/api/secrets/${id}/consume`, { method: "POST" });
+      const res = await fetch(`/api/secrets/${id}/consume`, {
+        method: "POST",
+        headers: { "X-Requested-With": "wick" },
+      });
       if (!res.ok) {
         throw new Error(
           res.status === 404
