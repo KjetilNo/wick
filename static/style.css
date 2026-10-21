@@ -98,6 +98,12 @@ textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+input[type="file"] {
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .row {
   display: flex;
   gap: 1rem;

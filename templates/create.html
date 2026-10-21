@@ -39,6 +39,12 @@
         placeholder="Shared out-of-band with the recipient">
     </div>
 
+    <div class="field">
+      <label for="attachment">Attach a file (optional)</label>
+      <input type="file" id="attachment" data-max-bytes="{{ max_attachment_bytes }}">
+      <p class="hint" id="attachment-hint">Encrypted in your browser along with the text.</p>
+    </div>
+
     <button type="submit">Encrypt &amp; create link</button>
   </form>
 

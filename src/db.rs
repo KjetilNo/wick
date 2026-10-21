@@ -14,6 +14,8 @@ pub struct ConsumedSecret {
     pub nonce: Vec<u8>,
     pub salt: Option<Vec<u8>>,
     pub requires_passphrase: bool,
+    pub attachment_ciphertext: Option<Vec<u8>>,
+    pub attachment_nonce: Option<Vec<u8>>,
 }
 
 #[derive(Debug, FromRow)]
@@ -52,10 +54,14 @@ pub async fn insert_secret(
     requires_passphrase: bool,
     created_at: i64,
     expires_at: i64,
+    attachment_ciphertext: Option<&[u8]>,
+    attachment_nonce: Option<&[u8]>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO secrets (id, ciphertext, nonce, salt, requires_passphrase, created_at, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO secrets
+            (id, ciphertext, nonce, salt, requires_passphrase, created_at, expires_at,
+             attachment_ciphertext, attachment_nonce)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )
     .bind(id)
     .bind(ciphertext)
@@ -64,6 +70,8 @@ pub async fn insert_secret(
     .bind(requires_passphrase)
     .bind(created_at)
     .bind(expires_at)
+    .bind(attachment_ciphertext)
+    .bind(attachment_nonce)
     .execute(pool)
     .await?;
 
@@ -87,7 +95,8 @@ pub async fn get_secret_meta(pool: &Pool, id: &str, now: i64) -> Result<Option<S
 pub async fn consume_secret(pool: &Pool, id: &str, now: i64) -> Result<Option<ConsumedSecret>, sqlx::Error> {
     sqlx::query_as::<_, ConsumedSecret>(
         "DELETE FROM secrets WHERE id = ?1 AND expires_at > ?2
-         RETURNING ciphertext, nonce, salt, requires_passphrase",
+         RETURNING ciphertext, nonce, salt, requires_passphrase,
+                   attachment_ciphertext, attachment_nonce",
     )
     .bind(id)
     .bind(now)

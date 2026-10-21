@@ -14,6 +14,14 @@ pub struct CreateSecretRequest {
     pub requires_passphrase: bool,
     /// requested time-to-live, in seconds; server clamps to the allowed set
     pub ttl_secs: i64,
+    /// base64url(AES-256-GCM ciphertext) of an encrypted `{ name, type, data }` envelope --
+    /// same key as `ciphertext`, its own nonce. Optional: a secret may carry text only.
+    #[serde(default)]
+    pub attachment_ciphertext: Option<String>,
+    /// base64url(96-bit GCM nonce) for the attachment. Must be present iff
+    /// `attachment_ciphertext` is.
+    #[serde(default)]
+    pub attachment_nonce: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -28,4 +36,6 @@ pub struct ConsumeResponse {
     pub nonce: String,
     pub salt: Option<String>,
     pub requires_passphrase: bool,
+    pub attachment_ciphertext: Option<String>,
+    pub attachment_nonce: Option<String>,
 }

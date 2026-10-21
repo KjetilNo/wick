@@ -1,4 +1,5 @@
 use wick::{build_router, spawn_reaper, AppState, Config};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -28,7 +29,11 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     tracing::info!("listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

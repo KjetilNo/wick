@@ -54,25 +54,53 @@ async function generateRawKey() {
   return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
 }
 
-async function encryptSecret(plaintext, passphrase) {
+// Encrypts the text, and -- if a file was attached -- a second, independent envelope
+// `{ name, type, data }` (data is base64 of the raw bytes) under the *same* key but its
+// own fresh nonce. Bundling the filename/type inside the encrypted envelope means the
+// server never learns them either.
+async function encryptSecret(plaintext, passphrase, attachmentFile) {
   const nonce = randomBytes(12);
   const encoded = new TextEncoder().encode(plaintext);
 
+  let key, salt, fragment, requiresPassphrase;
   if (passphrase) {
-    const salt = randomBytes(16);
-    const key = await deriveKeyFromPassphraseForEncrypt(passphrase, salt);
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, encoded);
-    return { ciphertext, nonce, salt, fragment: b64urlEncode(salt), requiresPassphrase: true };
+    salt = randomBytes(16);
+    key = await deriveKeyFromPassphrase(passphrase, salt, "encrypt");
+    fragment = b64urlEncode(salt);
+    requiresPassphrase = true;
+  } else {
+    key = await generateRawKey();
+    const rawKey = await crypto.subtle.exportKey("raw", key);
+    fragment = b64urlEncode(rawKey);
+    requiresPassphrase = false;
   }
 
-  const key = await generateRawKey();
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, encoded);
-  const rawKey = await crypto.subtle.exportKey("raw", key);
-  return { ciphertext, nonce, fragment: b64urlEncode(rawKey), requiresPassphrase: false };
+
+  let attachment = null;
+  if (attachmentFile) {
+    const fileBytes = new Uint8Array(await attachmentFile.arrayBuffer());
+    const envelope = JSON.stringify({
+      name: attachmentFile.name,
+      type: attachmentFile.type,
+      data: b64urlEncode(fileBytes),
+    });
+    const attachmentNonce = randomBytes(12);
+    const attachmentCiphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: attachmentNonce },
+      key,
+      new TextEncoder().encode(envelope),
+    );
+    attachment = { ciphertext: attachmentCiphertext, nonce: attachmentNonce };
+  }
+
+  return { ciphertext, nonce, salt, fragment, requiresPassphrase, attachment };
 }
 
-// Same derivation as deriveKeyFromPassphrase, but with "encrypt" usage instead of "decrypt".
-async function deriveKeyFromPassphraseForEncrypt(passphrase, salt) {
+// `usage` is "encrypt" when called from encryptSecret, "decrypt" when called from
+// decryptSecret -- PBKDF2-derived keys can only be used for the operation they were
+// imported for.
+async function deriveKeyFromPassphrase(passphrase, salt, usage) {
   const baseKey = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(passphrase),
@@ -85,19 +113,35 @@ async function deriveKeyFromPassphraseForEncrypt(passphrase, salt) {
     baseKey,
     { name: "AES-GCM", length: 256 },
     false,
-    ["encrypt"],
+    [usage],
   );
 }
 
 async function decryptSecret({ ciphertext, nonce, salt, requiresPassphrase, fragment, passphrase }) {
   let key;
   if (requiresPassphrase) {
-    key = await deriveKeyFromPassphrase(passphrase, salt);
+    key = await deriveKeyFromPassphrase(passphrase, salt, "decrypt");
   } else {
     key = await crypto.subtle.importKey("raw", fragment, "AES-GCM", false, ["decrypt"]);
   }
   const plaintextBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce }, key, ciphertext);
-  return new TextDecoder().decode(plaintextBuf);
+  return { plaintext: new TextDecoder().decode(plaintextBuf), key };
+}
+
+async function decryptAttachment(key, ciphertext, nonce) {
+  const envelopeBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce }, key, ciphertext);
+  const envelope = JSON.parse(new TextDecoder().decode(envelopeBuf));
+  return {
+    name: envelope.name,
+    type: envelope.type,
+    bytes: b64urlDecode(envelope.data),
+  };
+}
+
+function formatBytes(bytes) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${bytes} B`;
 }
 
 // ---- Create page -----------------------------------------------------------------------
@@ -112,6 +156,14 @@ function initCreateForm() {
     passphraseField.hidden = !usePassphrase.checked;
   });
 
+  const attachmentInput = document.getElementById("attachment");
+  const maxAttachmentBytes = Number(attachmentInput?.dataset.maxBytes || 0);
+
+  const attachmentHint = document.getElementById("attachment-hint");
+  if (attachmentHint) {
+    attachmentHint.textContent = `Encrypted in your browser along with the text, up to ${formatBytes(maxAttachmentBytes)}.`;
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const errorEl = document.getElementById("create-error");
@@ -122,6 +174,7 @@ function initCreateForm() {
     const passphrase = usePassphrase.checked
       ? document.getElementById("passphrase").value
       : null;
+    const attachmentFile = attachmentInput?.files[0] || null;
 
     if (usePassphrase.checked && !passphrase) {
       errorEl.textContent = "Enter a passphrase, or uncheck the passphrase option.";
@@ -129,8 +182,14 @@ function initCreateForm() {
       return;
     }
 
+    if (attachmentFile && attachmentFile.size > maxAttachmentBytes) {
+      errorEl.textContent = `Attachment is too large (max ${formatBytes(maxAttachmentBytes)}).`;
+      errorEl.hidden = false;
+      return;
+    }
+
     try {
-      const enc = await encryptSecret(secret, passphrase);
+      const enc = await encryptSecret(secret, passphrase, attachmentFile);
 
       const res = await fetch("/api/secrets", {
         method: "POST",
@@ -141,6 +200,8 @@ function initCreateForm() {
           salt: enc.salt ? b64urlEncode(enc.salt) : null,
           requires_passphrase: enc.requiresPassphrase,
           ttl_secs: ttlSecs,
+          attachment_ciphertext: enc.attachment ? b64urlEncode(enc.attachment.ciphertext) : null,
+          attachment_nonce: enc.attachment ? b64urlEncode(enc.attachment.nonce) : null,
         }),
       });
 
@@ -220,7 +281,7 @@ function initRevealPage() {
       }
 
       const data = await res.json();
-      const plaintext = await decryptSecret({
+      const { plaintext, key } = await decryptSecret({
         ciphertext: b64urlDecode(data.ciphertext),
         nonce: b64urlDecode(data.nonce),
         salt: data.salt ? b64urlDecode(data.salt) : null,
@@ -232,6 +293,25 @@ function initRevealPage() {
       outEl.textContent = plaintext;
       outEl.hidden = false;
       revealBtn.hidden = true;
+
+      if (data.attachment_ciphertext && data.attachment_nonce) {
+        const attachment = await decryptAttachment(
+          key,
+          b64urlDecode(data.attachment_ciphertext),
+          b64urlDecode(data.attachment_nonce),
+        );
+        const blob = new Blob([attachment.bytes], { type: attachment.type || "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+
+        const downloadLink = document.getElementById("attachment-download");
+        downloadLink.href = url;
+        downloadLink.download = attachment.name;
+        downloadLink.textContent = `Download ${attachment.name}`;
+        downloadLink.hidden = false;
+        downloadLink.addEventListener("click", () => {
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+      }
     } catch (err) {
       // A decrypt failure (wrong passphrase, or tampered ciphertext) throws here too --
       // the secret is already burned server-side at this point, by design: a one-time

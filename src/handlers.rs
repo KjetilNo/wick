@@ -17,6 +17,7 @@ use crate::AppState;
 pub struct CreateTemplate {
     pub ttl_choices: Vec<(&'static str, i64)>,
     pub max_bytes: usize,
+    pub max_attachment_bytes: usize,
 }
 
 #[derive(Template, WebTemplate)]
@@ -31,6 +32,7 @@ pub async fn create_page(State(state): State<AppState>) -> CreateTemplate {
     CreateTemplate {
         ttl_choices: state.config.ttl_choices_secs.clone(),
         max_bytes: state.config.max_secret_bytes,
+        max_attachment_bytes: state.config.max_attachment_bytes,
     }
 }
 
@@ -94,6 +96,41 @@ pub async fn create_secret(
         return Err(AppError::BadRequest("nonce must be 12 bytes".into()));
     }
 
+    // The attachment is optional, but ciphertext and nonce must come as a pair --
+    // the client always encrypts+sends both together or neither.
+    let attachment = match (&req.attachment_ciphertext, &req.attachment_nonce) {
+        (Some(ciphertext_b64), Some(nonce_b64)) => {
+            let ciphertext = URL_SAFE_NO_PAD.decode(ciphertext_b64).map_err(|_| {
+                AppError::BadRequest("attachment_ciphertext is not valid base64url".into())
+            })?;
+            let nonce = URL_SAFE_NO_PAD.decode(nonce_b64).map_err(|_| {
+                AppError::BadRequest("attachment_nonce is not valid base64url".into())
+            })?;
+
+            if ciphertext.is_empty() {
+                return Err(AppError::BadRequest(
+                    "attachment_ciphertext must not be empty".into(),
+                ));
+            }
+            if ciphertext.len() > state.config.max_attachment_bytes {
+                return Err(AppError::PayloadTooLarge);
+            }
+            if nonce.len() != 12 {
+                return Err(AppError::BadRequest(
+                    "attachment_nonce must be 12 bytes".into(),
+                ));
+            }
+
+            Some((ciphertext, nonce))
+        }
+        (None, None) => None,
+        _ => {
+            return Err(AppError::BadRequest(
+                "attachment_ciphertext and attachment_nonce must be given together".into(),
+            ))
+        }
+    };
+
     let allowed_ttl = state
         .config
         .ttl_choices_secs
@@ -116,6 +153,8 @@ pub async fn create_secret(
         req.requires_passphrase,
         created_at,
         expires_at,
+        attachment.as_ref().map(|(c, _)| c.as_slice()),
+        attachment.as_ref().map(|(_, n)| n.as_slice()),
     )
     .await?;
 
@@ -169,5 +208,9 @@ pub async fn consume_secret(
         nonce: URL_SAFE_NO_PAD.encode(&consumed.nonce),
         salt: consumed.salt.map(|s| URL_SAFE_NO_PAD.encode(&s)),
         requires_passphrase: consumed.requires_passphrase,
+        attachment_ciphertext: consumed
+            .attachment_ciphertext
+            .map(|c| URL_SAFE_NO_PAD.encode(&c)),
+        attachment_nonce: consumed.attachment_nonce.map(|n| URL_SAFE_NO_PAD.encode(&n)),
     }))
 }

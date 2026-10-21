@@ -23,7 +23,11 @@ async fn spawn_app() -> String {
         port: 0,
         database_url: database_url.clone(),
         max_secret_bytes: 1024,
+        max_attachment_bytes: 2048,
         ttl_choices_secs: vec![("1 second", 1), ("5 minutes", 300)],
+        // Permissive: the governor layer's own behavior isn't what these tests exercise.
+        rate_limit_burst: 10_000,
+        rate_limit_per_second: 10_000,
     };
     let state = wick::AppState {
         db: pool.clone(),
@@ -36,7 +40,12 @@ async fn spawn_app() -> String {
     let addr: SocketAddr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
 
     format!("http://{addr}")
@@ -169,4 +178,60 @@ async fn oversized_ciphertext_is_rejected() {
         "expected 413 or 400, got {}",
         res.status()
     );
+}
+
+#[tokio::test]
+async fn attachment_round_trips_through_create_and_consume() {
+    let base = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let mut body = sample_create_body(300);
+    body["attachment_ciphertext"] = json!(base64url("fake-attachment-ciphertext"));
+    body["attachment_nonce"] = json!(base64url("987654321098")); // 12 bytes
+
+    let create_res = client
+        .post(format!("{base}/api/secrets"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_res.status(), 200);
+    let created: Value = create_res.json().await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    let consume_res = client
+        .post(format!("{base}/api/secrets/{id}/consume"))
+        .header("X-Requested-With", "wick")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(consume_res.status(), 200);
+    let consumed: Value = consume_res.json().await.unwrap();
+    assert_eq!(
+        consumed["attachment_ciphertext"].as_str().unwrap(),
+        base64url("fake-attachment-ciphertext")
+    );
+    assert_eq!(
+        consumed["attachment_nonce"].as_str().unwrap(),
+        base64url("987654321098")
+    );
+}
+
+#[tokio::test]
+async fn mismatched_attachment_fields_are_rejected() {
+    let base = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    // ciphertext without its nonce must be rejected -- they're always sent as a pair.
+    let mut body = sample_create_body(300);
+    body["attachment_ciphertext"] = json!(base64url("fake-attachment-ciphertext"));
+
+    let res = client
+        .post(format!("{base}/api/secrets"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 400);
 }

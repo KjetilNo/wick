@@ -11,8 +11,9 @@ it cannot read what you shared.
 ## How it works
 
 1. **Create** — your browser generates a random AES-256-GCM key, encrypts the secret
-   locally, and uploads only the ciphertext. The server hands back an id; your browser
-   builds the link as `https://host/s/<id>#<key>`.
+   (and, optionally, an attached file — name, type, and bytes all encrypted together)
+   locally, and uploads only ciphertext. The server hands back an id; your browser builds
+   the link as `https://host/s/<id>#<key>`.
 2. **Share** the link. Optionally protect it with a passphrase (PBKDF2-derived, binds
    decryption to both the link and the passphrase).
 3. **View** — the recipient opens the link, sees a "Reveal" button (so chat apps
@@ -35,12 +36,15 @@ cargo run
 
 Config is via environment variables (all optional):
 
-| Var                | Default                   | Meaning                                  |
-|--------------------|----------------------------|-------------------------------------------|
-| `PORT`             | `8080`                    | listen port                               |
-| `DATABASE_URL`     | `sqlite:data/secrets.db`  | sqlite connection string                  |
-| `MAX_SECRET_BYTES` | `262144`                  | max ciphertext size accepted (256 KiB)    |
-| `RUST_LOG`         | —                          | tracing filter, e.g. `wick=debug`         |
+| Var                      | Default                   | Meaning                                       |
+|--------------------------|----------------------------|-----------------------------------------------|
+| `PORT`                   | `8080`                    | listen port                                   |
+| `DATABASE_URL`           | `sqlite:data/secrets.db`  | sqlite connection string                      |
+| `MAX_SECRET_BYTES`       | `262144`                  | max ciphertext size accepted (256 KiB)        |
+| `MAX_ATTACHMENT_BYTES`   | `10485760`                | max attachment ciphertext size (10 MiB)       |
+| `RATE_LIMIT_BURST`       | `20`                      | per-IP burst size for `POST /api/secrets`     |
+| `RATE_LIMIT_PER_SECOND`  | `1`                       | per-IP refill rate (requests/sec) after burst |
+| `RUST_LOG`               | —                          | tracing filter, e.g. `wick=debug`             |
 
 ## Running with Docker
 
@@ -72,6 +76,12 @@ would need to change).
 - Responses carry `Cache-Control: no-store`, a strict CSP, and `Referrer-Policy: no-referrer`.
 - This is a software mitigation against casual/server-side snooping, not a defense against
   a compromised browser or endpoint malware reading the DOM.
+- An attachment's filename, MIME type, and bytes are encrypted together into one envelope
+  client-side before upload, under the same key as the text -- the server never sees any
+  of it.
+- `POST /api/secrets` is rate-limited per source IP (`RATE_LIMIT_BURST` /
+  `RATE_LIMIT_PER_SECOND`) to curb automated filling of the database. Consuming a secret
+  is not rate-limited: its id is already a 128-bit unguessable value.
 
 ## Tests
 
